@@ -1,50 +1,180 @@
-# Welcome to your Expo app 👋
+# Campus Trails 🗺️
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Helping college students discover the best places around campus**
 
-## Get started
+Campus Trails is a mobile app built with React Native (Expo) and Supabase that helps new students find nearby places, hangout spots, affordable food places, and more. Students can add places, search by tags, and review locations - making campus life easier for freshers!
 
-1. Install dependencies
+---
+
+## 🎯 Features
+
+### ✅ Phase 1: Authentication & Roles (COMPLETED)
+
+- Email/password authentication with Supabase
+- Restricted to @vitapstudent.ac.in email domain
+- Role-based access control (Admin & Student)
+- Protected routes and session management
+
+### 🚧 Coming Next
+
+- **Phase 2**: Places Management (add, view, edit places)
+- **Phase 3**: Search & Filter by tags/names
+- **Phase 4**: Reviews & Ratings system
+- **Phase 5**: Admin Dashboard
+- **Phase 6**: Map Integration
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js installed
+- Expo CLI
+- Supabase account
+
+### Setup (5 minutes)
+
+1. **Install dependencies**
 
    ```bash
    npm install
    ```
 
-2. Start the app
+2. **Configure Supabase**
+   - Create a Supabase project at https://supabase.com
+   - Copy `.env.example` to `.env`
+   - Add your Supabase URL and anon key
 
+3. **Run database migration**
+   - Go to Supabase SQL Editor
+   - Run the SQL from `supabase/migrations/001_initial_schema.sql`
+
+4. **Start the app**
    ```bash
-   npx expo start
+   npm start
    ```
 
-In the output, you'll find options to open the app in a
+📖 **Detailed setup instructions**: See [QUICKSTART.md](QUICKSTART.md)
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 📱 User Roles
 
-## Get a fresh project
+### 👤 Student (Default)
 
-When you're ready, run:
+- Add and edit own places
+- Review and rate places
+- Search and discover locations
 
-```bash
-npm run reset-project
+### 👑 Admin
+
+- All student permissions
+- Delete any place
+- Manage user content
+
+---
+
+## 🏗️ Tech Stack
+
+- **Frontend**: React Native with Expo
+- **Backend**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **Storage**: Supabase Storage (for images)
+- **Language**: TypeScript
+
+---
+
+## 📁 Project Structure
+
+```
+campus-trails/
+├── app/                    # Expo Router screens
+│   ├── (tabs)/            # Protected tab screens
+│   ├── login.tsx          # Login screen
+│   ├── signup.tsx         # Signup screen
+│   └── _layout.tsx        # Root layout with auth
+├── contexts/              # React contexts
+│   └── auth-context.tsx   # Auth state management
+├── lib/                   # Utilities
+│   └── supabase.ts       # Supabase client config
+├── types/                 # TypeScript types
+│   └── database.types.ts  # Database type definitions
+├── supabase/              # Database migrations
+│   └── migrations/
+└── components/            # Reusable components
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## 🔒 Security
 
-To learn more about developing your project with Expo, look at the following resources:
+- Row Level Security (RLS) enabled on all tables
+- Email domain validation (@vitapstudent.ac.in)
+- Secure token storage with AsyncStorage
+- Server-side and client-side validation
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 📚 Documentation
 
-Join our community of developers creating universal apps.
+- [QUICKSTART.md](QUICKSTART.md) - 5-minute setup guide
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) - Detailed setup instructions
+- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Complete project roadmap
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+
+## 🐛 Troubleshooting
+
+**Can't login after signup?**
+
+- Check if email confirmations are enabled in Supabase
+- Supabase → Authentication → Settings → Disable for testing
+
+**Environment variables not loading?**
+
+```bash
+npx expo start -c  # Clear cache and restart
+```
+
+**Email validation error?**
+
+- Ensure you're using @vitapstudent.ac.in email
+
+More help: See [SETUP_GUIDE.md](SETUP_GUIDE.md#troubleshooting)
+
+---
+
+## 🚀 Development
+
+This project uses Expo Router for navigation and TypeScript for type safety.
+
+**Start development server:**
+
+```bash
+npm start
+```
+
+**Run on specific platform:**
+
+```bash
+npm run android
+npm run ios
+npm run web
+```
+
+---
+
+## 📝 License
+
+MIT License - feel free to use this project for your college!
+
+---
+
+## 🤝 Contributing
+
+This is a college project. Feel free to fork and adapt for your institution!
+
+---
+
+**Ready to get started?** Check out [QUICKSTART.md](QUICKSTART.md) 🚀

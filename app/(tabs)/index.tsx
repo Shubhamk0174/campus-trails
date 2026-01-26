@@ -1,98 +1,374 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { Colors } from "@/constants/theme";
+import { useAuth } from "@/contexts/auth-context";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { supabase } from "@/lib/supabase";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const { user, profile, isAdmin } = useAuth();
+  const router = useRouter();
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? "light"];
+  const [stats, setStats] = useState({
+    totalPlaces: 0,
+    myPlaces: 0,
+    totalReviews: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const fetchStats = React.useCallback(async () => {
+    try {
+      const [placesRes, myPlacesRes, reviewsRes] = await Promise.all([
+        supabase.from("places").select("id", { count: "exact", head: true }),
+        supabase
+          .from("places")
+          .select("id", { count: "exact", head: true })
+          .eq("added_by", user!.id),
+        supabase.from("reviews").select("id", { count: "exact", head: true }),
+      ]);
+
+      setStats({
+        totalPlaces: placesRes.count || 0,
+        myPlaces: myPlacesRes.count || 0,
+        totalReviews: reviewsRes.count || 0,
+      });
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  if (loading) {
+    return (
+      <View
+        style={[
+          styles.container,
+          styles.centerContent,
+          { backgroundColor: colors.background },
+        ]}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
+      <View style={styles.content}>
+        <View style={styles.greetingSection}>
+          <View>
+            <Text style={[styles.greeting, { color: colors.textSecondary }]}>
+              Hello,
+            </Text>
+            <Text style={[styles.name, { color: colors.text }]}>
+              {profile?.full_name || "Student"}!
+            </Text>
+          </View>
+          {isAdmin && (
+            <View
+              style={[
+                styles.adminBadge,
+                { backgroundColor: colors.warning + "20" },
+              ]}
+            >
+              <IconSymbol
+                name="crown.fill"
+                size={16}
+                color={colors.warning}
+                style={styles.badgeIcon}
+              />
+              <Text style={[styles.adminBadgeText, { color: colors.warning }]}>
+                Admin
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.statsContainer}>
+          <View
+            style={[
+              styles.statCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <Text style={[styles.statNumber, { color: colors.primary }]}>
+              {stats.totalPlaces}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+              Total Places
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.statCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <Text style={[styles.statNumber, { color: colors.primary }]}>
+              {stats.myPlaces}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+              My Places
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.statCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <Text style={[styles.statNumber, { color: colors.primary }]}>
+              {stats.totalReviews}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+              Reviews
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Quick Actions
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.actionCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+            onPress={() => router.push("/add-place")}
+          >
+            <View
+              style={[
+                styles.actionIcon,
+                { backgroundColor: colors.primary + "20" },
+              ]}
+            >
+              <IconSymbol
+                name="plus.circle.fill"
+                size={28}
+                color={colors.primary}
+              />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={[styles.actionTitle, { color: colors.text }]}>
+                Add New Place
+              </Text>
+              <Text
+                style={[
+                  styles.actionDescription,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Share a great spot with your peers
+              </Text>
+            </View>
+            <IconSymbol
+              name="chevron.right"
+              size={24}
+              color={colors.textTertiary}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.actionCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+            onPress={() => router.push("/(tabs)/places")}
+          >
+            <View
+              style={[
+                styles.actionIcon,
+                { backgroundColor: colors.accent + "20" },
+              ]}
+            >
+              <IconSymbol name="map.fill" size={28} color={colors.accent} />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={[styles.actionTitle, { color: colors.text }]}>
+                Explore Places
+              </Text>
+              <Text
+                style={[
+                  styles.actionDescription,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Discover amazing locations around campus
+              </Text>
+            </View>
+            <IconSymbol
+              name="chevron.right"
+              size={24}
+              color={colors.textTertiary}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            About Campus Trails
+          </Text>
+          <View
+            style={[
+              styles.infoCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+              Campus Trails helps students discover the best places around
+              campus. Share your favorite spots, read reviews, and explore new
+              locations!
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.bottomSpacer} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  greetingSection: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  greeting: {
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  name: {
+    fontSize: 28,
+    fontWeight: "bold",
+  },
+  adminBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  badgeIcon: {
+    marginRight: 4,
+  },
+  adminBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  statsContainer: {
+    flexDirection: "row",
+    marginBottom: 24,
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    textAlign: "center",
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  actionCard: {
+    flexDirection: "row",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+  },
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+  actionContent: {
+    flex: 1,
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  actionDescription: {
+    fontSize: 14,
+  },
+  infoCard: {
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+  },
+  infoText: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  bottomSpacer: {
+    height: 40,
+  },
+  centerContent: {
+    justifyContent: "center",
+    alignItems: "center",
   },
 });

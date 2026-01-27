@@ -1,6 +1,6 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useTheme } from "@/contexts/theme-context";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -46,7 +46,7 @@ export default function PlacesScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const router = useRouter();
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useTheme();
   const colors = Colors[colorScheme ?? "light"];
 
   const fetchPlaces = async () => {

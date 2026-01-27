@@ -10,7 +10,10 @@ import "react-native-reanimated";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import {
+  ThemeProvider as CustomThemeProvider,
+  useTheme,
+} from "@/contexts/theme-context";
 import { ActivityIndicator, View } from "react-native";
 
 export const unstable_settings = {
@@ -18,7 +21,7 @@ export const unstable_settings = {
 };
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useTheme();
   const { session, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
@@ -56,7 +59,7 @@ function RootLayoutNav() {
           options={{ presentation: "modal", title: "Modal" }}
         />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
     </ThemeProvider>
   );
 }
@@ -64,9 +67,11 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <RootLayoutNav />
-      </AuthProvider>
+      <CustomThemeProvider>
+        <AuthProvider>
+          <RootLayoutNav />
+        </AuthProvider>
+      </CustomThemeProvider>
     </SafeAreaProvider>
   );
 }

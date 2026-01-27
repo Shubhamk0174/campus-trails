@@ -1,7 +1,7 @@
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/auth-context";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useTheme } from "@/contexts/theme-context";
 import { supabase } from "@/lib/supabase";
 import React, { useState } from "react";
 import {
@@ -9,7 +9,6 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -18,12 +17,11 @@ import {
 
 export default function ProfileScreen() {
   const { user, profile, signOut, isAdmin } = useAuth();
-  const colorScheme = useColorScheme();
+  const { colorScheme, themePreference, setThemePreference } = useTheme();
   const colors = Colors[colorScheme ?? "light"];
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [loading, setLoading] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(colorScheme === "dark");
 
   const handleSave = async () => {
     if (!fullName.trim()) {
@@ -60,10 +58,16 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const toggleTheme = () => {
-    setIsDarkMode(!isDarkMode);
-    // Note: This is a visual toggle only. To persist theme preference,
-    // you would need to implement AsyncStorage or similar solution
+  const getThemeIcon = () => {
+    if (themePreference === "system") return "gear";
+    if (themePreference === "dark") return "moon.fill";
+    return "sun.max.fill";
+  };
+
+  const getThemeLabel = () => {
+    if (themePreference === "system") return "System";
+    if (themePreference === "dark") return "Dark";
+    return "Light";
   };
 
   return (
@@ -142,13 +146,37 @@ export default function ProfileScreen() {
             PREFERENCES
           </Text>
 
-          {/* Theme Toggle */}
+          {/* Theme Selection */}
           <TouchableOpacity
             style={[
               styles.settingItem,
               { backgroundColor: colors.card, borderColor: colors.cardBorder },
             ]}
-            onPress={toggleTheme}
+            onPress={() => {
+              Alert.alert(
+                "Choose Theme",
+                "Select your preferred theme appearance",
+                [
+                  {
+                    text: `☀️ Light${themePreference === "light" ? " ✓" : ""}`,
+                    onPress: () => setThemePreference("light"),
+                  },
+                  {
+                    text: `🌙 Dark${themePreference === "dark" ? " ✓" : ""}`,
+                    onPress: () => setThemePreference("dark"),
+                  },
+                  {
+                    text: `⚙️ System${themePreference === "system" ? " ✓" : ""}`,
+                    onPress: () => setThemePreference("system"),
+                  },
+                  {
+                    text: "Cancel",
+                    style: "cancel",
+                  },
+                ],
+                { cancelable: true }
+              );
+            }}
           >
             <View style={styles.settingLeft}>
               <View
@@ -158,14 +186,14 @@ export default function ProfileScreen() {
                 ]}
               >
                 <IconSymbol
-                  name={isDarkMode ? "moon.fill" : "sun.max.fill"}
+                  name={getThemeIcon()}
                   size={20}
                   color={colors.primary}
                 />
               </View>
               <View style={styles.settingTextContainer}>
                 <Text style={[styles.settingTitle, { color: colors.text }]}>
-                  Dark Mode
+                  Theme
                 </Text>
                 <Text
                   style={[
@@ -173,18 +201,14 @@ export default function ProfileScreen() {
                     { color: colors.textSecondary },
                   ]}
                 >
-                  {isDarkMode ? "Enabled" : "Disabled"}
+                  {getThemeLabel()}
                 </Text>
               </View>
             </View>
-            <Switch
-              value={isDarkMode}
-              onValueChange={toggleTheme}
-              trackColor={{
-                false: colors.backgroundTertiary,
-                true: colors.primary + "40",
-              }}
-              thumbColor={isDarkMode ? colors.primary : colors.card}
+            <IconSymbol
+              name="chevron.right"
+              size={20}
+              color={colors.textTertiary}
             />
           </TouchableOpacity>
         </View>

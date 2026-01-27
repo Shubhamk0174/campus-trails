@@ -174,7 +174,7 @@ export default function ProfileScreen() {
                     style: "cancel",
                   },
                 ],
-                { cancelable: true }
+                { cancelable: true },
               );
             }}
           >

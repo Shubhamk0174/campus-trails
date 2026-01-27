@@ -18,7 +18,8 @@ const THEME_STORAGE_KEY = "@campus_trails_theme";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemColorScheme = useSystemColorScheme();
-  const [themePreference, setThemePreferenceState] = useState<ThemePreference>("system");
+  const [themePreference, setThemePreferenceState] =
+    useState<ThemePreference>("system");
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Compute actual color scheme based on preference
@@ -42,7 +43,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const loadThemePreference = async () => {
     try {
       const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-      if (savedTheme === "light" || savedTheme === "dark" || savedTheme === "system") {
+      if (
+        savedTheme === "light" ||
+        savedTheme === "dark" ||
+        savedTheme === "system"
+      ) {
         setThemePreferenceState(savedTheme);
       }
     } catch (error) {
@@ -74,7 +79,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeContext.Provider
-      value={{ colorScheme, themePreference, setThemePreference, toggleColorScheme }}
+      value={{
+        colorScheme,
+        themePreference,
+        setThemePreference,
+        toggleColorScheme,
+      }}
     >
       {children}
     </ThemeContext.Provider>

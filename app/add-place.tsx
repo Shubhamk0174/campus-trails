@@ -13,7 +13,7 @@ import {
     TouchableOpacity,
     View
 } from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Marker } from "react-native-maps";
 
 const AVAILABLE_TAGS = [
   "food",
@@ -181,7 +181,6 @@ export default function AddPlaceScreen() {
           </View>
           <View style={styles.mapContainer}>
             <MapView
-              provider={PROVIDER_GOOGLE}
               style={styles.map}
               initialRegion={{
                 ...location,

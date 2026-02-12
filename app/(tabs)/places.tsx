@@ -4,15 +4,17 @@ import { useTheme } from "@/contexts/theme-context";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
+import MapView, { Marker } from 'react-native-maps';
+
 import {
-    ActivityIndicator,
-    FlatList,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 interface Place {

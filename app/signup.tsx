@@ -4,16 +4,16 @@ import { useTheme } from "@/contexts/theme-context";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 export default function SignupScreen() {
@@ -42,8 +42,14 @@ export default function SignupScreen() {
       return false;
     }
 
-    if (!email.endsWith("@vitapstudent.ac.in")) {
-      Alert.alert("Error", "Please use your @vitapstudent.ac.in email address");
+    if (
+      !email.endsWith("@vitapstudent.ac.in") &&
+      !email.endsWith("@vitap.ac.in")
+    ) {
+      Alert.alert(
+        "Error",
+        "Please use your @vitap.ac.in or @vitapstudent.ac.in email address",
+      );
       return false;
     }
 
@@ -126,7 +132,7 @@ export default function SignupScreen() {
                   color: colors.text,
                 },
               ]}
-              placeholder="your.name@vitapstudent.ac.in"
+              placeholder="your.name@vitap.ac.in"
               placeholderTextColor={colors.placeholder}
               value={email}
               onChangeText={setEmail}
@@ -202,7 +208,7 @@ export default function SignupScreen() {
           </View>
 
           <Text style={[styles.footer, { color: colors.textTertiary }]}>
-            Only @vitapstudent.ac.in emails are allowed
+            Only @vitap.ac.in and @vitapstudent.ac.in emails are allowed
           </Text>
         </View>
       </ScrollView>

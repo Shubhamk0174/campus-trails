@@ -4,15 +4,15 @@ import { useTheme } from "@/contexts/theme-context";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 export default function LoginScreen() {
@@ -71,7 +71,7 @@ export default function LoginScreen() {
                 color: colors.text,
               },
             ]}
-            placeholder="your.name@vitapstudent.ac.in"
+            placeholder="your.name@vitap.ac.in"
             placeholderTextColor={colors.placeholder}
             value={email}
             onChangeText={setEmail}
@@ -127,7 +127,7 @@ export default function LoginScreen() {
         </View>
 
         <Text style={[styles.footer, { color: colors.textTertiary }]}>
-          Only @vitapstudent.ac.in emails are allowed
+          Only @vitap.ac.in and @vitapstudent.ac.in emails are allowed
         </Text>
       </View>
     </KeyboardAvoidingView>

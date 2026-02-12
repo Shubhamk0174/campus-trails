@@ -11,6 +11,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
   ios: {
+    bundleIdentifier: "com.shubhamk0174.campustrails",
     supportsTablet: true,
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
@@ -57,6 +58,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         },
       },
     ],
+    "expo-location",
   ],
   experiments: {
     typedRoutes: true,

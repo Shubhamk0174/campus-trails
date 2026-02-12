@@ -77,10 +77,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
       // Validate email domain on client side
-      if (!email.endsWith("@vitapstudent.ac.in")) {
+      if (
+        !email.endsWith("@vitapstudent.ac.in") &&
+        !email.endsWith("@vitap.ac.in")
+      ) {
         return {
           error: new Error(
-            "Only @vitapstudent.ac.in email addresses are allowed",
+            "Only @vitap.ac.in and @vitapstudent.ac.in email addresses are allowed",
           ),
         };
       }
@@ -104,10 +107,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       // Validate email domain on client side
-      if (!email.endsWith("@vitapstudent.ac.in")) {
+      if (
+        !email.endsWith("@vitapstudent.ac.in") &&
+        !email.endsWith("@vitap.ac.in")
+      ) {
         return {
           error: new Error(
-            "Only @vitapstudent.ac.in email addresses are allowed",
+            "Only @vitap.ac.in and @vitapstudent.ac.in email addresses are allowed",
           ),
         };
       }

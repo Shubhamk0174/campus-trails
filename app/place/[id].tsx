@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Marker } from "react-native-maps";
 
 interface Place {
   id: string;
@@ -178,7 +178,6 @@ export default function PlaceDetailScreen() {
             <Text style={styles.cardTitle}>Location</Text>
             <View style={styles.mapContainer}>
               <MapView
-                provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 initialRegion={{
                   latitude: place.latitude,

@@ -1,7 +1,7 @@
 import {
-  DarkTheme,
-  DefaultTheme,
-  ThemeProvider,
+    DarkTheme,
+    DefaultTheme,
+    ThemeProvider,
 } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -11,8 +11,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import {
-  ThemeProvider as CustomThemeProvider,
-  useTheme,
+    ThemeProvider as CustomThemeProvider,
+    useTheme,
 } from "@/contexts/theme-context";
 import { ActivityIndicator, View } from "react-native";
 
@@ -30,12 +30,21 @@ function RootLayoutNav() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === "(tabs)";
+    const inProtectedRoute =
+      segments[0] === "add-place" ||
+      segments[0] === "place" ||
+      segments[0] === "add-review";
 
-    if (!session && inAuthGroup) {
+    if (!session && (inAuthGroup || inProtectedRoute)) {
       // Redirect to login if not authenticated
       router.replace("/login");
-    } else if (session && !inAuthGroup) {
-      // Redirect to tabs if authenticated
+    } else if (
+      session &&
+      !inAuthGroup &&
+      !inProtectedRoute &&
+      segments[0] !== "modal"
+    ) {
+      // Redirect to tabs if authenticated and not in a protected route
       router.replace("/(tabs)");
     }
   }, [session, segments, loading, router]);
@@ -54,6 +63,9 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="signup" options={{ headerShown: false }} />
+        <Stack.Screen name="add-place" options={{ headerShown: false }} />
+        <Stack.Screen name="place/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="add-review/[id]" options={{ headerShown: false }} />
         <Stack.Screen
           name="modal"
           options={{ presentation: "modal", title: "Modal" }}

@@ -3,19 +3,29 @@ import { Colors } from "@/constants/theme";
 import { useTheme } from "@/contexts/theme-context";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
-import MapView, { Marker } from 'react-native-maps';
+import React, { useEffect, useRef, useState } from "react";
 
+import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import {
   ActivityIndicator,
+  Alert,
+  Dimensions,
   FlatList,
-  RefreshControl,
+  Image,
+  Keyboard,
+  Linking,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import MapView, { Callout, Marker, PROVIDER_GOOGLE } from "react-native-maps";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const CARD_WIDTH = SCREEN_WIDTH * 0.7;
 
 interface Place {
   id: string;
@@ -23,11 +33,16 @@ interface Place {
   description: string | null;
   address: string | null;
   tags: string[];
+  image_urls?: string[];
   added_by: string;
   created_at: string;
+  latitude?: number;
+  longitude?: number;
+  distance_km?: number;
+  road_distance_km?: number;
   profiles: {
     full_name: string;
-  };
+  } | null;
 }
 
 const POPULAR_TAGS = [
@@ -38,57 +53,179 @@ const POPULAR_TAGS = [
   "shopping",
   "cheap",
   "hangout",
+  "library",
+  "gym",
+  "vegetarian",
+  "non-veg",
+  "fast-food",
+  "restaurant",
+  "park",
 ];
 
 export default function PlacesScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [filteredPlaces, setFilteredPlaces] = useState<Place[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<Place[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [currentLocation, setCurrentLocation] =
+    useState<Location.LocationObject | null>(null);
+  const mapRef = useRef<MapView>(null);
   const router = useRouter();
   const { colorScheme } = useTheme();
   const colors = Colors[colorScheme ?? "light"];
 
-  const fetchPlaces = async () => {
+  const fetchPlaces = React.useCallback(async () => {
+    if (!currentLocation) return;
+
     try {
-      const { data, error } = await supabase
-        .from("places")
-        .select("*, profiles(full_name)")
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc("get_nearby_places", {
+        user_lat: currentLocation.coords.latitude,
+        user_lng: currentLocation.coords.longitude,
+        radius_km: 100,
+      });
 
       if (error) throw error;
-      setPlaces(data || []);
-      setFilteredPlaces(data || []);
+
+      // Transform the data to match our interface
+      const transformedData =
+        data?.map((item: any) => ({
+          ...item,
+          profiles: item.profiles
+            ? { full_name: item.profiles.full_name }
+            : null,
+        })) || [];
+
+      setPlaces(transformedData);
+      setFilteredPlaces(transformedData);
     } catch (error: any) {
-      console.error("Error fetching places:", error.message);
+      console.error("Error fetching nearby places:", error.message);
     } finally {
       setLoading(false);
-      setRefreshing(false);
+    }
+  }, [currentLocation]);
+
+  const fetchSearchSuggestions = React.useCallback(
+    async (query: string) => {
+      if (!query.trim() || !currentLocation) {
+        setSearchSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+
+      try {
+        // Search only database places (real places search temporarily disabled due to API rate limits)
+        const { data, error } = await supabase.rpc("get_nearby_places", {
+          user_lat: currentLocation.coords.latitude,
+          user_lng: currentLocation.coords.longitude,
+          radius_km: 100,
+        });
+
+        if (error) throw error;
+
+        // Filter database places that match the search query
+        const dbSuggestions =
+          data
+            ?.filter(
+              (place: any) =>
+                place.name.toLowerCase().includes(query.toLowerCase()) ||
+                place.description
+                  ?.toLowerCase()
+                  .includes(query.toLowerCase()) ||
+                place.address?.toLowerCase().includes(query.toLowerCase()),
+            )
+            .slice(0, 5) || []; // Limit to 5 suggestions
+
+        setSearchSuggestions(dbSuggestions);
+        setShowSuggestions(dbSuggestions.length > 0);
+      } catch (error: any) {
+        console.error("Error fetching search suggestions:", error.message);
+        setSearchSuggestions([]);
+        setShowSuggestions(false);
+      }
+    },
+    [currentLocation],
+  );
+
+  const handlePlaceSelect = async (selectedPlace: Place) => {
+    Keyboard.dismiss();
+
+    // Center map on selected place
+    if (mapRef.current && selectedPlace.latitude && selectedPlace.longitude) {
+      mapRef.current.animateToRegion({
+        latitude: selectedPlace.latitude,
+        longitude: selectedPlace.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    }
+
+    // Fetch places nearby to the selected location
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.rpc("get_nearby_places", {
+        user_lat: selectedPlace.latitude!,
+        user_lng: selectedPlace.longitude!,
+        radius_km: 100,
+      });
+
+      if (error) throw error;
+
+      const transformedData =
+        data?.map((item: any) => ({
+          ...item,
+          profiles: item.profiles
+            ? { full_name: item.profiles.full_name }
+            : null,
+        })) || [];
+
+      setPlaces(transformedData);
+      setFilteredPlaces(transformedData);
+      setSearchQuery(selectedPlace.name);
+      setShowSuggestions(false);
+    } catch (error: any) {
+      console.error(
+        "Error fetching places near selected location:",
+        error.message,
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission denied",
+          "Location permission is required to show your current position.",
+        );
+        return;
+      }
+      const location = await Location.getCurrentPositionAsync({});
+      setCurrentLocation(location);
+    } catch (error) {
+      console.error("Error getting location:", error);
     }
   };
 
   useEffect(() => {
-    fetchPlaces();
+    getCurrentLocation();
   }, []);
+
+  useEffect(() => {
+    if (currentLocation) {
+      fetchPlaces();
+    }
+  }, [currentLocation, fetchPlaces]);
 
   const filterPlaces = React.useCallback(() => {
     let filtered = places;
 
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (place) =>
-          place.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          place.description
-            ?.toLowerCase()
-            .includes(searchQuery.toLowerCase()) ||
-          place.address?.toLowerCase().includes(searchQuery.toLowerCase()),
-      );
-    }
-
-    // Filter by tags
+    // Only filter by tags (search is now handled by suggestions)
     if (selectedTags.length > 0) {
       filtered = filtered.filter((place) =>
         selectedTags.some((tag) => place.tags.includes(tag)),
@@ -96,7 +233,7 @@ export default function PlacesScreen() {
     }
 
     setFilteredPlaces(filtered);
-  }, [searchQuery, selectedTags, places]);
+  }, [selectedTags, places]);
 
   useEffect(() => {
     filterPlaces();
@@ -108,116 +245,257 @@ export default function PlacesScreen() {
     );
   };
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchPlaces();
-  }, []);
+  const centerOnCurrentLocation = () => {
+    if (currentLocation && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    }
+  };
 
-  const renderPlace = ({ item }: { item: Place }) => (
+  const navigateToPlace = async (place: Place) => {
+    if (!place.latitude || !place.longitude) {
+      Alert.alert("Error", "Location coordinates not available");
+      return;
+    }
+
+    try {
+      // Try Google Maps first (most common on Android)
+      const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${place.latitude},${place.longitude}&destination_place_id=${encodeURIComponent(place.name)}`;
+
+      const canOpenGoogleMaps = await Linking.canOpenURL(googleMapsUrl);
+      if (canOpenGoogleMaps) {
+        await Linking.openURL(googleMapsUrl);
+        return;
+      }
+
+      // Fallback to Apple Maps (iOS) or general maps URL
+      const appleMapsUrl = `http://maps.apple.com/?daddr=${place.latitude},${place.longitude}&dirflg=d`;
+      const canOpenAppleMaps = await Linking.canOpenURL(appleMapsUrl);
+      if (canOpenAppleMaps) {
+        await Linking.openURL(appleMapsUrl);
+        return;
+      }
+
+      // Last resort - open in browser
+      const webUrl = `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`;
+      await Linking.openURL(webUrl);
+    } catch (error) {
+      Alert.alert("Error", "Unable to open maps application");
+      console.error("Error opening maps:", error);
+    }
+  };
+
+  const renderPlaceCard = ({ item }: { item: Place }) => (
     <TouchableOpacity
       style={[
         styles.placeCard,
         { backgroundColor: colors.card, borderColor: colors.cardBorder },
       ]}
-      onPress={() => router.push(`/place/${item.id}`)}
+      onPress={() => {
+        // Navigate to place details and center map
+        if (mapRef.current && item.latitude && item.longitude) {
+          mapRef.current.animateToRegion({
+            latitude: item.latitude,
+            longitude: item.longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          });
+        }
+        router.push(`/place/${item.id}`);
+      }}
     >
-      <View style={styles.placeHeader}>
-        <Text style={[styles.placeName, { color: colors.text }]}>
-          {item.name}
-        </Text>
+      <View style={styles.placeCardImageContainer}>
+        {item.image_urls && item.image_urls.length > 0 ? (
+          <Image
+            source={{ uri: item.image_urls[0] }}
+            style={styles.placeCardImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View
+            style={[
+              styles.placeCardImagePlaceholder,
+              { backgroundColor: colors.card },
+            ]}
+          >
+            <Ionicons name="image-outline" size={48} color={colors.primary} />
+          </View>
+        )}
+        <View style={styles.placeCardOverlay}>
+          <TouchableOpacity
+            style={[
+              styles.navigateButton,
+              { backgroundColor: "rgba(255, 255, 255, 0.9)" },
+            ]}
+            onPress={() => navigateToPlace(item)}
+          >
+            <Ionicons name="navigate" size={16} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
-      {item.description && (
-        <Text
-          style={[styles.placeDescription, { color: colors.textSecondary }]}
-          numberOfLines={2}
-        >
-          {item.description}
-        </Text>
-      )}
-      {item.address && (
-        <View style={styles.addressContainer}>
-          <IconSymbol name="location.fill" size={14} color={colors.primary} />
+
+      <View style={styles.placeCardContent}>
+        <View style={styles.placeCardHeader}>
           <Text
-            style={[styles.placeAddress, { color: colors.primary }]}
+            style={[styles.placeCardName, { color: colors.text }]}
+            numberOfLines={2}
+          >
+            {item.name}
+          </Text>
+          {item.distance_km && (
+            <View style={styles.placeCardDistance}>
+              <Ionicons name="location" size={12} color={colors.primary} />
+              <Text
+                style={[
+                  styles.placeCardDistanceText,
+                  { color: colors.primary },
+                ]}
+              >
+                {item.distance_km.toFixed(1)} km
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {item.address && (
+          <Text
+            style={[styles.placeCardAddress, { color: colors.textSecondary }]}
             numberOfLines={1}
           >
             {item.address}
           </Text>
-        </View>
-      )}
-      {item.tags.length > 0 && (
-        <View style={styles.tagsContainer}>
-          {item.tags.slice(0, 3).map((tag) => (
-            <View
-              key={tag}
-              style={[styles.tag, { backgroundColor: colors.primary + "20" }]}
-            >
-              <Text style={[styles.tagText, { color: colors.primary }]}>
-                #{tag}
+        )}
+
+        {item.tags && item.tags.length > 0 && (
+          <View style={styles.placeCardTags}>
+            {item.tags.slice(0, 2).map((tag) => (
+              <View
+                key={tag}
+                style={[styles.miniTag, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.miniTagText}>#{tag}</Text>
+              </View>
+            ))}
+            {item.tags.length > 2 && (
+              <Text
+                style={[styles.moreTagsText, { color: colors.textSecondary }]}
+              >
+                +{item.tags.length - 2} more
               </Text>
-            </View>
-          ))}
-          {item.tags.length > 3 && (
-            <Text style={[styles.moreText, { color: colors.textSecondary }]}>
-              +{item.tags.length - 3} more
-            </Text>
-          )}
-        </View>
-      )}
-      <View style={[styles.placeFooter, { borderTopColor: colors.cardBorder }]}>
-        <Text style={[styles.addedBy, { color: colors.textSecondary }]}>
-          Added by {item.profiles.full_name}
-        </Text>
-        <Text style={[styles.date, { color: colors.textTertiary }]}>
-          {new Date(item.created_at).toLocaleDateString()}
-        </Text>
+            )}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <IconSymbol name="map.fill" size={64} color={colors.textTertiary} />
-      <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        No places found
-      </Text>
-      <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-        {searchQuery || selectedTags.length > 0
-          ? "Try adjusting your filters"
-          : "Be the first to add a place!"}
-      </Text>
-    </View>
-  );
-
-  if (loading) {
-    return (
-      <View
-        style={[
-          styles.loadingContainer,
-          { backgroundColor: colors.background },
-        ]}
-      >
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-          Loading places...
-        </Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.content}>
-        <View style={styles.pageHeader}>
-          <Text style={[styles.pageTitle, { color: colors.text }]}>
-            Discover Places
-          </Text>
-          <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>
-            {filteredPlaces.length} place
-            {filteredPlaces.length !== 1 ? "s" : ""}
-          </Text>
-        </View>
+    <View style={styles.container}>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={{
+          latitude: currentLocation?.coords.latitude || 16.5062,
+          longitude: currentLocation?.coords.longitude || 80.648,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        }}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+      >
+        {filteredPlaces
+          .filter((place) => place.latitude && place.longitude)
+          .map((place) => (
+            <Marker
+              key={place.id}
+              coordinate={{
+                latitude: place.latitude!,
+                longitude: place.longitude!,
+              }}
+              title={place.name}
+              description={`${place.description || ""}${place.distance_km ? `\n${place.distance_km.toFixed(1)} km away` : ""}`}
+            >
+              <Callout onPress={() => router.push(`/place/${place.id}`)}>
+                <View
+                  style={[
+                    styles.calloutContainer,
+                    { backgroundColor: colors.card },
+                  ]}
+                >
+                  <Text style={[styles.calloutTitle, { color: colors.text }]}>
+                    {place.name}
+                  </Text>
+                  {place.description && (
+                    <Text
+                      style={[
+                        styles.calloutDescription,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {place.description}
+                    </Text>
+                  )}
+                  {place.distance_km && (
+                    <Text
+                      style={[
+                        styles.calloutDistance,
+                        { color: colors.primary },
+                      ]}
+                    >
+                      {place.distance_km.toFixed(1)} km away
+                    </Text>
+                  )}
+                  <View style={styles.calloutButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.calloutButton,
+                        { backgroundColor: colors.primary },
+                      ]}
+                      onPress={() => router.push(`/place/${place.id}`)}
+                    >
+                      <Ionicons
+                        name="information-circle"
+                        size={16}
+                        color="#fff"
+                      />
+                      <Text style={styles.calloutButtonText}>Details</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.calloutButton,
+                        { backgroundColor: colors.primary },
+                      ]}
+                      onPress={() => navigateToPlace(place)}
+                    >
+                      <Ionicons name="navigate" size={16} color="#fff" />
+                      <Text style={styles.calloutButtonText}>Navigate</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </Callout>
+            </Marker>
+          ))}
+      </MapView>
 
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <View
+            style={[styles.loadingContainer, { backgroundColor: colors.card }]}
+          >
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.text }]}>
+              Finding nearby places...
+            </Text>
+          </View>
+        </View>
+      )}
+
+      <View style={styles.overlay}>
         <View style={styles.searchContainer}>
           <IconSymbol
             name="magnifyingglass"
@@ -236,10 +514,89 @@ export default function PlacesScreen() {
             ]}
             placeholder="Search places..."
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={(text) => {
+              setSearchQuery(text);
+              fetchSearchSuggestions(text);
+            }}
+            onFocus={() => {
+              if (searchQuery.trim()) {
+                fetchSearchSuggestions(searchQuery);
+              }
+            }}
+            onBlur={() => {
+              // Delay hiding suggestions to allow clicks
+              setTimeout(() => setShowSuggestions(false), 200);
+            }}
             placeholderTextColor={colors.placeholder}
           />
+          <TouchableOpacity
+            style={styles.locationIcon}
+            onPress={() => {
+              Keyboard.dismiss();
+              centerOnCurrentLocation();
+            }}
+          >
+            <Ionicons name="locate" size={20} color={colors.primary} />
+          </TouchableOpacity>
         </View>
+
+        {showSuggestions && searchSuggestions.length > 0 && (
+          <View
+            style={[
+              styles.suggestionsContainer,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <ScrollView
+              style={styles.suggestionsScrollView}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+            >
+              {searchSuggestions.map((suggestion) => (
+                <TouchableOpacity
+                  key={suggestion.id}
+                  style={styles.suggestionItem}
+                  onPress={() => handlePlaceSelect(suggestion)}
+                >
+                  <View style={styles.suggestionContent}>
+                    <View style={styles.suggestionHeader}>
+                      <Text
+                        style={[styles.suggestionName, { color: colors.text }]}
+                      >
+                        {suggestion.name}
+                      </Text>
+                    </View>
+                    {suggestion.address && (
+                      <Text
+                        style={[
+                          styles.suggestionAddress,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {suggestion.address}
+                      </Text>
+                    )}
+                    {suggestion.distance_km && (
+                      <Text
+                        style={[
+                          styles.suggestionDistance,
+                          { color: colors.primary },
+                        ]}
+                      >
+                        🚗 {suggestion.distance_km.toFixed(1)} km away
+                      </Text>
+                    )}
+                  </View>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={colors.textTertiary}
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         <View style={styles.tagsSection}>
           <FlatList
@@ -278,16 +635,20 @@ export default function PlacesScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={filteredPlaces}
-        renderItem={renderPlace}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={renderEmpty}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      />
+      {filteredPlaces.length > 0 && (
+        <View style={styles.placesCardsContainer}>
+          <FlatList
+            horizontal
+            data={filteredPlaces}
+            renderItem={renderPlaceCard}
+            keyExtractor={(item) => item.id}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.placesCardsContent}
+            snapToInterval={CARD_WIDTH + 12}
+            decelerationRate="fast"
+          />
+        </View>
+      )}
 
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: colors.primary }]}
@@ -303,21 +664,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    paddingTop: 60,
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+  map: {
+    flex: 1,
   },
-  pageHeader: {
-    marginBottom: 20,
-  },
-  pageTitle: {
-    fontSize: 28,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  pageSubtitle: {
-    fontSize: 14,
+  overlay: {
+    position: "absolute",
+    top: 60,
+    left: 16,
+    right: 16,
   },
   searchContainer: {
     flexDirection: "row",
@@ -333,7 +687,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 12,
     paddingLeft: 40,
-    paddingRight: 14,
+    paddingRight: 40,
     paddingVertical: 14,
     fontSize: 16,
     shadowColor: "#000",
@@ -342,6 +696,60 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     borderWidth: 1,
+  },
+  locationIcon: {
+    position: "absolute",
+    right: 12,
+    zIndex: 1,
+    padding: 4,
+  },
+  suggestionsContainer: {
+    position: "absolute",
+    top: 70,
+    left: 16,
+    right: 16,
+    maxHeight: 200,
+    borderRadius: 12,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  suggestionsScrollView: {
+    maxHeight: 200,
+  },
+  suggestionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
+  },
+  suggestionContent: {
+    flex: 1,
+  },
+  suggestionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 2,
+  },
+  suggestionName: {
+    fontSize: 16,
+    fontWeight: "600",
+    flex: 1,
+  },
+  suggestionAddress: {
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  suggestionDistance: {
+    fontSize: 12,
+    fontWeight: "500",
   },
   tagsSection: {
     marginBottom: 12,
@@ -363,100 +771,37 @@ const styles = StyleSheet.create({
   filterTagTextSelected: {
     color: "#fff",
   },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 80,
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
   },
-  placeCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    borderWidth: 1,
-  },
-  placeHeader: {
-    marginBottom: 8,
-  },
-  placeName: {
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  placeDescription: {
-    fontSize: 14,
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  addressContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 8,
-  },
-  placeAddress: {
-    fontSize: 14,
-  },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 12,
-  },
-  tag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  tagText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  moreText: {
-    fontSize: 12,
-    alignSelf: "center",
-  },
-  placeFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    paddingTop: 8,
-  },
-  addedBy: {
-    fontSize: 12,
-  },
-  date: {
-    fontSize: 12,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-  },
-  emptyContainer: {
-    alignItems: "center",
-    paddingTop: 60,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
+    marginLeft: 8,
     fontSize: 14,
-    textAlign: "center",
+    fontWeight: "500",
   },
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 20,
+    bottom: 250,
     width: 60,
     height: 60,
     borderRadius: 30,
@@ -467,5 +812,151 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 8,
+  },
+  placesCardsContainer: {
+    position: "absolute",
+    bottom: 20,
+    left: 0,
+    right: 0,
+    height: 220,
+  },
+  placesCardsContent: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  placeCard: {
+    width: CARD_WIDTH,
+    borderRadius: 20,
+    overflow: "hidden",
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  placeCardImageContainer: {
+    position: "relative",
+  },
+  placeCardImage: {
+    width: "100%",
+    height: 100,
+  },
+  placeCardImagePlaceholder: {
+    width: "100%",
+    height: 100,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f3f4f6",
+  },
+  placeCardOverlay: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+  },
+  placeCardContent: {
+    padding: 16,
+  },
+  placeCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  placeCardName: {
+    fontSize: 16,
+    fontWeight: "700",
+    flex: 1,
+    marginRight: 8,
+    lineHeight: 20,
+  },
+  placeCardAddress: {
+    fontSize: 13,
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  placeCardDistance: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  placeCardDistanceText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  navigateButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  placeCardTags: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+  },
+  miniTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  miniTagText: {
+    fontSize: 11,
+    color: "#fff",
+    fontWeight: "600",
+  },
+  moreTagsText: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  calloutContainer: {
+    minWidth: 200,
+    padding: 12,
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  calloutTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  calloutDescription: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  calloutDistance: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  calloutButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  calloutButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    gap: 4,
+  },
+  calloutButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#fff",
   },
 });

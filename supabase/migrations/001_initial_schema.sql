@@ -62,8 +62,8 @@ CREATE INDEX IF NOT EXISTS idx_reviews_user_id ON public.reviews(user_id);
 CREATE OR REPLACE FUNCTION public.validate_student_email()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.email NOT LIKE '%@vitapstudent.ac.in' THEN
-    RAISE EXCEPTION 'Only @vitapstudent.ac.in email addresses are allowed to register';
+  IF NEW.email NOT LIKE '%@vitapstudent.ac.in' AND NEW.email NOT LIKE '%@vitap.ac.in' THEN
+    RAISE EXCEPTION 'Only @vitapstudent.ac.in and @vitap.ac.in email addresses are allowed to register';
   END IF;
   RETURN NEW;
 END;
@@ -96,6 +96,13 @@ $$ LANGUAGE plpgsql;
 -- ============================================
 -- TRIGGERS
 -- ============================================
+
+-- Drop existing triggers if they exist
+DROP TRIGGER IF EXISTS validate_email_trigger ON auth.users;
+DROP TRIGGER IF EXISTS create_profile_trigger ON auth.users;
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
+DROP TRIGGER IF EXISTS update_places_updated_at ON public.places;
+DROP TRIGGER IF EXISTS update_reviews_updated_at ON public.reviews;
 
 -- Trigger to validate email on user creation
 CREATE TRIGGER validate_email_trigger
@@ -133,6 +140,19 @@ CREATE TRIGGER update_reviews_updated_at
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.places ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Places are viewable by everyone authenticated" ON public.places;
+DROP POLICY IF EXISTS "Authenticated users can insert places" ON public.places;
+DROP POLICY IF EXISTS "Users can update own places" ON public.places;
+DROP POLICY IF EXISTS "Users can delete own places" ON public.places;
+DROP POLICY IF EXISTS "Admins can delete any place" ON public.places;
+DROP POLICY IF EXISTS "Reviews are viewable by everyone authenticated" ON public.reviews;
+DROP POLICY IF EXISTS "Authenticated users can insert reviews" ON public.reviews;
+DROP POLICY IF EXISTS "Users can update own reviews" ON public.reviews;
+DROP POLICY IF EXISTS "Users can delete own reviews" ON public.reviews;
 
 -- Profiles policies
 CREATE POLICY "Public profiles are viewable by everyone"
@@ -196,9 +216,79 @@ CREATE POLICY "Users can delete own reviews"
   TO authenticated
   USING (auth.uid() = user_id);
 
--- ============================================
--- GRANT PERMISSIONS
--- ============================================
+-- Function to calculate distance between two points using Haversine formula
+CREATE OR REPLACE FUNCTION public.calculate_distance(
+  lat1 DECIMAL,
+  lng1 DECIMAL,
+  lat2 DECIMAL,
+  lng2 DECIMAL
+)
+RETURNS DECIMAL AS $$
+DECLARE
+  dlat DECIMAL;
+  dlng DECIMAL;
+  a DECIMAL;
+  c DECIMAL;
+  earth_radius_km DECIMAL := 6371;
+BEGIN
+  -- Convert degrees to radians
+  dlat := RADIANS(lat2 - lat1);
+  dlng := RADIANS(lng2 - lng1);
+
+  -- Haversine formula
+  a := SIN(dlat/2) * SIN(dlat/2) +
+       COS(RADIANS(lat1)) * COS(RADIANS(lat2)) *
+       SIN(dlng/2) * SIN(dlng/2);
+
+  c := 2 * ATAN2(SQRT(a), SQRT(1-a));
+
+  RETURN earth_radius_km * c;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Function to get nearby places within a certain radius
+CREATE OR REPLACE FUNCTION public.get_nearby_places(
+  user_lat DECIMAL,
+  user_lng DECIMAL,
+  radius_km DECIMAL DEFAULT 100
+)
+RETURNS TABLE(
+  id UUID,
+  name TEXT,
+  description TEXT,
+  address TEXT,
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  tags TEXT[],
+  image_urls TEXT[],
+  added_by UUID,
+  created_at TIMESTAMP WITH TIME ZONE,
+  distance_km DECIMAL,
+  profiles JSONB
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    p.id,
+    p.name,
+    p.description,
+    p.address,
+    p.latitude,
+    p.longitude,
+    p.tags,
+    p.image_urls,
+    p.added_by,
+    p.created_at,
+    public.calculate_distance(user_lat, user_lng, p.latitude, p.longitude) as distance_km,
+    jsonb_build_object('full_name', pr.full_name) as profiles
+  FROM public.places p
+  LEFT JOIN public.profiles pr ON p.added_by = pr.id
+  WHERE p.latitude IS NOT NULL
+    AND p.longitude IS NOT NULL
+    AND public.calculate_distance(user_lat, user_lng, p.latitude, p.longitude) <= radius_km
+  ORDER BY distance_km ASC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;

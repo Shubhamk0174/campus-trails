@@ -1,15 +1,16 @@
 import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 
@@ -21,6 +22,7 @@ interface Place {
   latitude: number | null;
   longitude: number | null;
   tags: string[];
+  image_urls: string[];
   added_by: string;
   created_at: string;
   profiles: {
@@ -48,12 +50,7 @@ export default function PlaceDetailScreen() {
   const router = useRouter();
   const { user, isAdmin } = useAuth();
 
-  useEffect(() => {
-    fetchPlaceDetails();
-    fetchReviews();
-  }, [id]);
-
-  const fetchPlaceDetails = async () => {
+  const fetchPlaceDetails = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from("places")
@@ -69,9 +66,9 @@ export default function PlaceDetailScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, router]);
 
-  const fetchReviews = async () => {
+  const fetchReviews = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from("reviews")
@@ -84,7 +81,12 @@ export default function PlaceDetailScreen() {
     } catch (error: any) {
       console.error("Error fetching reviews:", error);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    fetchPlaceDetails();
+    fetchReviews();
+  }, [fetchPlaceDetails, fetchReviews]);
 
   const handleDelete = () => {
     Alert.alert(
@@ -158,6 +160,26 @@ export default function PlaceDetailScreen() {
             </View>
           )}
         </View>
+
+        {place.image_urls && place.image_urls.length > 0 && (
+          <View style={styles.imagesSection}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.imagesContainer}
+            >
+              {place.image_urls.map((imageUrl, index) => (
+                <View key={index} style={styles.imageWrapper}>
+                  <Image
+                    source={{ uri: imageUrl }}
+                    style={styles.placeImage}
+                    resizeMode="cover"
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {place.description && (
           <View style={styles.card}>
@@ -336,6 +358,27 @@ const styles = StyleSheet.create({
   reviewCount: {
     fontSize: 14,
     color: "#6b7280",
+  },
+  imagesSection: {
+    backgroundColor: "#fff",
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
+  imagesContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  imageWrapper: {
+    width: 280,
+    height: 200,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "#f3f4f6",
+  },
+  placeImage: {
+    width: "100%",
+    height: "100%",
   },
   card: {
     backgroundColor: "#fff",

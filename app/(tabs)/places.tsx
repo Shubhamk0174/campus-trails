@@ -8,19 +8,19 @@ import React, { useEffect, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  Keyboard,
-  Linking,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    Keyboard,
+    Linking,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import MapView, { Callout, Marker, PROVIDER_GOOGLE } from "react-native-maps";
 
@@ -62,14 +62,50 @@ const POPULAR_TAGS = [
   "park",
 ];
 
+const haversineDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number => {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+interface CombinedSuggestion {
+  type: "db" | "osm";
+  id: string;
+  name: string;
+  address?: string;
+  latitude: number;
+  longitude: number;
+  distance_km?: number;
+  dbPlace?: Place;
+}
+
 export default function PlacesScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [filteredPlaces, setFilteredPlaces] = useState<Place[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searchSuggestions, setSearchSuggestions] = useState<Place[]>([]);
+  const [searchSuggestions, setSearchSuggestions] = useState<CombinedSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedOsmMarker, setSelectedOsmMarker] = useState<{
+    latitude: number;
+    longitude: number;
+    name: string;
+  } | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const osmSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [currentLocation, setCurrentLocation] =
     useState<Location.LocationObject | null>(null);
   const mapRef = useRef<MapView>(null);
@@ -112,63 +148,135 @@ export default function PlacesScreen() {
       if (!query.trim() || !currentLocation) {
         setSearchSuggestions([]);
         setShowSuggestions(false);
+        setSearchLoading(false);
         return;
       }
 
+      const userLat = currentLocation.coords.latitude;
+      const userLon = currentLocation.coords.longitude;
+
+      setSearchLoading(true);
       try {
-        // Search only database places (real places search temporarily disabled due to API rate limits)
-        const { data, error } = await supabase.rpc("get_nearby_places", {
-          user_lat: currentLocation.coords.latitude,
-          user_lng: currentLocation.coords.longitude,
-          radius_km: 100,
-        });
+        // 1. DB places — prioritised, top 5
+        const { data: dbData, error: dbError } = await supabase.rpc(
+          "get_nearby_places",
+          { user_lat: userLat, user_lng: userLon, radius_km: 50 },
+        );
 
-        if (error) throw error;
+        const dbSuggestions: CombinedSuggestion[] = dbError
+          ? []
+          : (dbData || [])
+              .filter(
+                (place: any) =>
+                  place.name.toLowerCase().includes(query.toLowerCase()) ||
+                  place.description
+                    ?.toLowerCase()
+                    .includes(query.toLowerCase()) ||
+                  place.address?.toLowerCase().includes(query.toLowerCase()),
+              )
+              .slice(0, 5)
+              .map((place: any) => ({
+                type: "db" as const,
+                id: place.id,
+                name: place.name,
+                address: place.address,
+                latitude: place.latitude,
+                longitude: place.longitude,
+                distance_km: place.distance_km,
+                dbPlace: place,
+              }));
 
-        // Filter database places that match the search query
-        const dbSuggestions =
-          data
-            ?.filter(
-              (place: any) =>
-                place.name.toLowerCase().includes(query.toLowerCase()) ||
-                place.description
-                  ?.toLowerCase()
-                  .includes(query.toLowerCase()) ||
-                place.address?.toLowerCase().includes(query.toLowerCase()),
-            )
-            .slice(0, 5) || []; // Limit to 5 suggestions
+        // 2. OSM (Nominatim) places nearby up to 50 km
+        // viewbox = left,top,right,bottom (±0.5° ≈ 55 km bounding box)
+        let osmSuggestions: CombinedSuggestion[] = [];
+        try {
+          const delta = 0.5;
+          const viewbox = `${userLon - delta},${userLat + delta},${userLon + delta},${userLat - delta}`;
+          const osmUrl =
+            `https://nominatim.openstreetmap.org/search` +
+            `?q=${encodeURIComponent(query)}` +
+            `&format=json&limit=20&addressdetails=1` +
+            `&viewbox=${viewbox}&bounded=0`;
+          const response = await fetch(osmUrl, {
+            headers: {
+              "Accept-Language": "en",
+              "User-Agent": "CampusTrails/1.0",
+            },
+          });
+          if (response.ok) {
+            const osmData = await response.json();
+            osmSuggestions = osmData
+              .map((item: any) => {
+                const lat = parseFloat(item.lat);
+                const lon = parseFloat(item.lon);
+                const dist = haversineDistance(userLat, userLon, lat, lon);
+                const rawName =
+                  item.name && item.name.trim()
+                    ? item.name
+                    : item.display_name.split(",")[0].trim();
+                return {
+                  type: "osm" as const,
+                  id: `osm_${item.osm_id}`,
+                  name: rawName,
+                  address: item.display_name,
+                  latitude: lat,
+                  longitude: lon,
+                  distance_km: dist,
+                };
+              })
+              .filter(
+                (s: CombinedSuggestion) => (s.distance_km ?? Infinity) <= 50,
+              )
+              .slice(0, 5);
+          }
+        } catch (e) {
+          console.warn("OSM search failed:", e);
+        }
 
-        setSearchSuggestions(dbSuggestions);
-        setShowSuggestions(dbSuggestions.length > 0);
+        const combined = [...dbSuggestions, ...osmSuggestions];
+        setSearchSuggestions(combined);
+        setShowSuggestions(combined.length > 0);
       } catch (error: any) {
         console.error("Error fetching search suggestions:", error.message);
         setSearchSuggestions([]);
         setShowSuggestions(false);
+      } finally {
+        setSearchLoading(false);
       }
     },
     [currentLocation],
   );
 
-  const handlePlaceSelect = async (selectedPlace: Place) => {
+  const handlePlaceSelect = async (suggestion: CombinedSuggestion) => {
     Keyboard.dismiss();
+    setShowSuggestions(false);
+    setSearchQuery(suggestion.name);
 
-    // Center map on selected place
-    if (mapRef.current && selectedPlace.latitude && selectedPlace.longitude) {
+    // DB place → navigate directly to its detail page
+    if (suggestion.type === "db" && suggestion.dbPlace) {
+      router.push(`/place/${suggestion.dbPlace.id}`);
+      return;
+    }
+
+    // OSM (external) place → mark on map and show nearby DB places
+    const { latitude, longitude } = suggestion;
+    setSelectedOsmMarker({ latitude, longitude, name: suggestion.name });
+
+    if (mapRef.current) {
       mapRef.current.animateToRegion({
-        latitude: selectedPlace.latitude,
-        longitude: selectedPlace.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
+        latitude,
+        longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
       });
     }
 
-    // Fetch places nearby to the selected location
     try {
       setLoading(true);
       const { data, error } = await supabase.rpc("get_nearby_places", {
-        user_lat: selectedPlace.latitude!,
-        user_lng: selectedPlace.longitude!,
-        radius_km: 100,
+        user_lat: latitude,
+        user_lng: longitude,
+        radius_km: 5,
       });
 
       if (error) throw error;
@@ -181,15 +289,9 @@ export default function PlacesScreen() {
             : null,
         })) || [];
 
-      setPlaces(transformedData);
       setFilteredPlaces(transformedData);
-      setSearchQuery(selectedPlace.name);
-      setShowSuggestions(false);
     } catch (error: any) {
-      console.error(
-        "Error fetching places near selected location:",
-        error.message,
-      );
+      console.error("Error fetching nearby DB places:", error.message);
     } finally {
       setLoading(false);
     }
@@ -480,6 +582,37 @@ export default function PlacesScreen() {
               </Callout>
             </Marker>
           ))}
+        {selectedOsmMarker && (
+          <Marker
+            coordinate={{
+              latitude: selectedOsmMarker.latitude,
+              longitude: selectedOsmMarker.longitude,
+            }}
+            title={selectedOsmMarker.name}
+            pinColor="#f97316"
+          >
+            <Callout>
+              <View
+                style={[
+                  styles.calloutContainer,
+                  { backgroundColor: colors.card },
+                ]}
+              >
+                <Text style={[styles.calloutTitle, { color: colors.text }]}>
+                  {selectedOsmMarker.name}
+                </Text>
+                <Text
+                  style={[
+                    styles.calloutDescription,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  External location
+                </Text>
+              </View>
+            </Callout>
+          </Marker>
+        )}
       </MapView>
 
       {loading && (
@@ -496,47 +629,64 @@ export default function PlacesScreen() {
       )}
 
       <View style={styles.overlay}>
-        <View style={styles.searchContainer}>
-          <IconSymbol
-            name="magnifyingglass"
-            size={20}
-            color={colors.textTertiary}
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={[
-              styles.searchInput,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.cardBorder,
-                color: colors.text,
-              },
-            ]}
-            placeholder="Search places..."
-            value={searchQuery}
-            onChangeText={(text) => {
-              setSearchQuery(text);
-              fetchSearchSuggestions(text);
-            }}
-            onFocus={() => {
-              if (searchQuery.trim()) {
-                fetchSearchSuggestions(searchQuery);
-              }
-            }}
-            onBlur={() => {
-              // Delay hiding suggestions to allow clicks
-              setTimeout(() => setShowSuggestions(false), 200);
-            }}
-            placeholderTextColor={colors.placeholder}
-          />
+        <View style={styles.searchRow}>
+          <View style={styles.searchContainer}>
+            <IconSymbol
+              name="magnifyingglass"
+              size={20}
+              color={colors.textTertiary}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={[
+                styles.searchInput,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.cardBorder,
+                  color: colors.text,
+                },
+              ]}
+              placeholder="Search places..."
+              value={searchQuery}
+              onChangeText={(text) => {
+                setSearchQuery(text);
+                if (osmSearchTimeoutRef.current)
+                  clearTimeout(osmSearchTimeoutRef.current);
+                osmSearchTimeoutRef.current = setTimeout(
+                  () => fetchSearchSuggestions(text),
+                  400,
+                );
+              }}
+              onFocus={() => {
+                if (searchQuery.trim()) {
+                  fetchSearchSuggestions(searchQuery);
+                }
+              }}
+              onBlur={() => {
+                setTimeout(() => setShowSuggestions(false), 250);
+              }}
+              placeholderTextColor={colors.placeholder}
+            />
+            <TouchableOpacity
+              style={styles.locationIcon}
+              onPress={() => {
+                Keyboard.dismiss();
+                centerOnCurrentLocation();
+              }}
+              disabled={searchLoading}
+            >
+              {searchLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons name="locate" size={20} color={colors.primary} />
+              )}
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity
-            style={styles.locationIcon}
-            onPress={() => {
-              Keyboard.dismiss();
-              centerOnCurrentLocation();
-            }}
+            style={[styles.addPlaceButton, { backgroundColor: colors.primary }]}
+            onPress={() => router.push("/add-place")}
           >
-            <Ionicons name="locate" size={20} color={colors.primary} />
+            <Ionicons name="add" size={26} color="#fff" />
           </TouchableOpacity>
         </View>
 
@@ -560,6 +710,20 @@ export default function PlacesScreen() {
                 >
                   <View style={styles.suggestionContent}>
                     <View style={styles.suggestionHeader}>
+                      <Ionicons
+                        name={
+                          suggestion.type === "db"
+                            ? "location"
+                            : "globe-outline"
+                        }
+                        size={14}
+                        color={
+                          suggestion.type === "db"
+                            ? colors.primary
+                            : colors.textSecondary
+                        }
+                        style={{ marginRight: 4 }}
+                      />
                       <Text
                         style={[styles.suggestionName, { color: colors.text }]}
                       >
@@ -572,18 +736,19 @@ export default function PlacesScreen() {
                           styles.suggestionAddress,
                           { color: colors.textSecondary },
                         ]}
+                        numberOfLines={1}
                       >
                         {suggestion.address}
                       </Text>
                     )}
-                    {suggestion.distance_km && (
+                    {suggestion.distance_km != null && (
                       <Text
                         style={[
                           styles.suggestionDistance,
                           { color: colors.primary },
                         ]}
                       >
-                        🚗 {suggestion.distance_km.toFixed(1)} km away
+                        {suggestion.distance_km.toFixed(1)} km away
                       </Text>
                     )}
                   </View>
@@ -650,12 +815,6 @@ export default function PlacesScreen() {
         </View>
       )}
 
-      <TouchableOpacity
-        style={[styles.fab, { backgroundColor: colors.primary }]}
-        onPress={() => router.push("/add-place")}
-      >
-        <IconSymbol name="plus.circle.fill" size={32} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -673,10 +832,28 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
   },
-  searchContainer: {
+  searchRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 12,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  addPlaceButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   searchIcon: {
     position: "absolute",
@@ -705,10 +882,10 @@ const styles = StyleSheet.create({
   },
   suggestionsContainer: {
     position: "absolute",
-    top: 70,
-    left: 16,
-    right: 16,
-    maxHeight: 200,
+    top: 68,
+    left: 0,
+    right: 0,
+    maxHeight: 250,
     borderRadius: 12,
     borderWidth: 1,
     shadowColor: "#000",
@@ -719,7 +896,7 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   suggestionsScrollView: {
-    maxHeight: 200,
+    maxHeight: 250,
   },
   suggestionItem: {
     flexDirection: "row",
@@ -798,21 +975,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-  fab: {
-    position: "absolute",
-    right: 20,
-    bottom: 250,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
-  },
+
   placesCardsContainer: {
     position: "absolute",
     bottom: 20,

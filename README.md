@@ -1,180 +1,149 @@
-# Campus Trails 🗺️
+# Campus Trails
 
-**Helping college students discover the best places around campus**
+Campus Trails is a React Native mobile application (Expo + Expo Router) for discovering, adding, and reviewing student-friendly places around campus.
 
-Campus Trails is a mobile app built with React Native (Expo) and Supabase that helps new students find nearby places, hangout spots, affordable food places, and more. Students can add places, search by tags, and review locations - making campus life easier for freshers!
+It combines:
+- Supabase Auth for login and session management
+- Postgres (via Supabase) for places, profiles, and reviews
+- Supabase Storage for place images
+- Map-driven discovery using current location and nearby place queries
 
----
+## Documentation Index
 
-## 🎯 Features
+- [docs/SETUP.md](docs/SETUP.md): local setup and first run
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): app structure, route map, data flow
+- [docs/DATABASE.md](docs/DATABASE.md): schema, RLS, functions, storage policies
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): Expo build and release notes
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md): common issues and fixes
 
-### ✅ Phase 1: Authentication & Roles (COMPLETED)
+## Current Features
 
-- Email/password authentication with Supabase
-- Restricted to @vitapstudent.ac.in email domain
-- Role-based access control (Admin & Student)
-- Protected routes and session management
+- Authentication with Supabase email/password
+- Domain restriction to `@vitap.ac.in` and `@vitapstudent.ac.in` (client + DB trigger)
+- Profile creation on signup (trigger-backed)
+- Role model (`student`, `admin`) with admin delete capability for places
+- Home dashboard with quick stats
+- Place discovery on map with current location
+- Nearby place search via Supabase RPC (`get_nearby_places`)
+- Combined search suggestions from internal DB and OpenStreetMap Nominatim
+- Add new places with:
+  - map location picker
+  - tag selection
+  - up to 5 images uploaded to Supabase Storage
+- Place detail page with images, tags, map, author info, and reviews
+- Review create/update flow (one review per user per place)
+- Theme preference support (`light`, `dark`, `system`)
 
-### 🚧 Coming Next
+## Tech Stack
 
-- **Phase 2**: Places Management (add, view, edit places)
-- **Phase 3**: Search & Filter by tags/names
-- **Phase 4**: Reviews & Ratings system
-- **Phase 5**: Admin Dashboard
-- **Phase 6**: Map Integration
+- Framework: Expo SDK 54, React Native 0.81, React 19
+- Navigation: Expo Router
+- Backend: Supabase
+- DB: PostgreSQL with Row Level Security
+- Storage: Supabase Storage (`images` bucket)
+- Maps/Location: `react-native-maps`, `expo-location`
+- Language: TypeScript
 
----
+## Quick Start
 
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Node.js installed
-- Expo CLI
-- Supabase account
-
-### Setup (5 minutes)
-
-1. **Install dependencies**
+1. Install dependencies.
 
    ```bash
    npm install
    ```
 
-2. **Configure Supabase**
-   - Create a Supabase project at https://supabase.com
-   - Copy `.env.example` to `.env`
-   - Add your Supabase URL and anon key
+2. Create `.env` from `.env.example` and fill values.
 
-3. **Run database migration**
-   - Go to Supabase SQL Editor
-   - Run the SQL from `supabase/migrations/001_initial_schema.sql`
+   ```bash
+   EXPO_PUBLIC_SUPABASE_URL=...
+   EXPO_PUBLIC_SUPABASE_ANON_KEY=...
+   EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=...
+   ```
 
-4. **Start the app**
+3. Run SQL migrations in Supabase SQL Editor:
+   - `supabase/migrations/001_initial_schema.sql`
+   - `supabase/migrations/002_storage_setup.sql`
+
+4. Start development server.
+
    ```bash
    npm start
    ```
 
-📖 **Detailed setup instructions**: See [QUICKSTART.md](QUICKSTART.md)
+5. Run on platform.
 
----
+   ```bash
+   npm run android
+   npm run ios
+   npm run web
+   ```
 
-## 📱 User Roles
+For full setup details, see [docs/SETUP.md](docs/SETUP.md).
 
-### 👤 Student (Default)
+## Environment Variables
 
-- Add and edit own places
-- Review and rate places
-- Search and discover locations
+Defined in `.env.example`:
 
-### 👑 Admin
+- `EXPO_PUBLIC_SUPABASE_URL`
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`
 
-- All student permissions
-- Delete any place
-- Manage user content
+These are consumed by:
+- `lib/supabase.ts` (Supabase client)
+- `app.config.ts` (native map config)
 
----
+## NPM Scripts
 
-## 🏗️ Tech Stack
+- `npm start`: start Expo development server
+- `npm run android`: run Android native build/dev client
+- `npm run ios`: run iOS native build/dev client
+- `npm run web`: run web target
+- `npm run lint`: run Expo lint
 
-- **Frontend**: React Native with Expo
-- **Backend**: Supabase (PostgreSQL)
-- **Authentication**: Supabase Auth
-- **Storage**: Supabase Storage (for images)
-- **Language**: TypeScript
+Note: `package.json` contains `reset-project` but the referenced script file is not present in this repository.
 
----
+## Security Highlights
 
-## 📁 Project Structure
+- RLS enabled for `profiles`, `places`, and `reviews`
+- Authenticated read/write policies for places and reviews
+- Ownership checks for updates/deletes
+- Admin override policy for deleting any place
+- Email-domain validation trigger on `auth.users`
 
-```
+See [docs/DATABASE.md](docs/DATABASE.md) for exact policies and functions.
+
+## Project Structure
+
+```text
 campus-trails/
-├── app/                    # Expo Router screens
-│   ├── (tabs)/            # Protected tab screens
-│   ├── login.tsx          # Login screen
-│   ├── signup.tsx         # Signup screen
-│   └── _layout.tsx        # Root layout with auth
-├── contexts/              # React contexts
-│   └── auth-context.tsx   # Auth state management
-├── lib/                   # Utilities
-│   └── supabase.ts       # Supabase client config
-├── types/                 # TypeScript types
-│   └── database.types.ts  # Database type definitions
-├── supabase/              # Database migrations
-│   └── migrations/
-└── components/            # Reusable components
+  app/                    Expo Router screens
+    (tabs)/               Home, Places, Profile tabs
+    add-place.tsx         Add place flow (location, tags, image upload)
+    place/[id].tsx        Place detail and reviews
+    add-review/[id].tsx   Create/update review
+    login.tsx             Login screen
+    signup.tsx            Signup screen
+  contexts/
+    auth-context.tsx      Session, profile, role, auth methods
+    theme-context.tsx     Theme preference persistence
+  lib/
+    supabase.ts           Supabase client initialization
+  supabase/migrations/
+    001_initial_schema.sql
+    002_storage_setup.sql
+  types/
+    database.types.ts     Generated-style DB type declarations
 ```
 
----
+## Development Notes
 
-## 🔒 Security
+- Protected route handling is centralized in `app/_layout.tsx`.
+- Place discovery uses RPC query radius values depending on context:
+  - general nearby fetch up to 100 km
+  - suggestion fetch context up to 50 km
+  - nearby DB places around selected external marker up to 5 km
+- Review uniqueness is enforced in DB with `UNIQUE(place_id, user_id)`.
 
-- Row Level Security (RLS) enabled on all tables
-- Email domain validation (@vitapstudent.ac.in)
-- Secure token storage with AsyncStorage
-- Server-side and client-side validation
+## License
 
----
-
-## 📚 Documentation
-
-- [QUICKSTART.md](QUICKSTART.md) - 5-minute setup guide
-- [SETUP_GUIDE.md](SETUP_GUIDE.md) - Detailed setup instructions
-- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Complete project roadmap
-
----
-
-## 🐛 Troubleshooting
-
-**Can't login after signup?**
-
-- Check if email confirmations are enabled in Supabase
-- Supabase → Authentication → Settings → Disable for testing
-
-**Environment variables not loading?**
-
-```bash
-npx expo start -c  # Clear cache and restart
-```
-
-**Email validation error?**
-
-- Ensure you're using @vitapstudent.ac.in email
-
-More help: See [SETUP_GUIDE.md](SETUP_GUIDE.md#troubleshooting)
-
----
-
-## 🚀 Development
-
-This project uses Expo Router for navigation and TypeScript for type safety.
-
-**Start development server:**
-
-```bash
-npm start
-```
-
-**Run on specific platform:**
-
-```bash
-npm run android
-npm run ios
-npm run web
-```
-
----
-
-## 📝 License
-
-MIT License - feel free to use this project for your college!
-
----
-
-## 🤝 Contributing
-
-This is a college project. Feel free to fork and adapt for your institution!
-
----
-
-**Ready to get started?** Check out [QUICKSTART.md](QUICKSTART.md) 🚀
+MIT
